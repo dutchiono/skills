@@ -13,7 +13,7 @@
     "Install Bankr CLI: `npm install -g @bankr/cli`",
     "Login to Bankr: `bankr login email you@example.com`",
     "Install this skill and use it for token exits",
-    "Default behavior: every first guarded exit anchors a permanent 10% moonbag"
+    "Default behavior: every first guarded exit anchors a 10% moonbag with a $50 USD floor; either can be overridden globally or per token"
   ],
   "install": {
     "type": "bankr",
