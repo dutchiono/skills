@@ -18,6 +18,6 @@
   "install": {
     "type": "bankr",
     "repoPath": "bankr-moonbag",
-    "command": "install the bankr-moonbag skill from https://github.com/dutchiono/skills/tree/moonbag-guard/bankr-moonbag"
+    "command": "install the bankr-moonbag skill from https://github.com/dutchiono/skills/tree/main/bankr-moonbag"
   }
 }
