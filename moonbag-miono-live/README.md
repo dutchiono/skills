@@ -1,5 +1,10 @@
 # moonbag.miono.live
 
+## Status
+
+- **Bankr agent skill:** implemented and available in `../bankr-moonbag/`
+- **Regular-wallet router:** **NOT IMPLEMENTED YET**. It is currently a product/architecture concept only. Do not describe it as live, usable, or deployed.
+
 Static landing/explainer for two Moonbag implementations:
 
 1. **Bankr agent skill** — live at https://github.com/dutchiono/skills/tree/main/bankr-moonbag
