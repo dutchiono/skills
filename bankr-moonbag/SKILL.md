@@ -1,6 +1,6 @@
 ---
 name: bankr-moonbag
-description: Bankr trading guard that preserves a permanent moonbag on crypto exits. Use whenever the user wants to sell, exit, close, dump, take profit, reduce, or "sell all" of a token position with Bankr. Converts full exits into guarded partial exits, persists a per-token reserve anchored to the first guarded balance snapshot, and requires an explicit override before the protected reserve can be sold.
+description: Bankr trading companion that automatically slices a configurable moonbag off each token buy and moves it to a separate moonbag wallet. Normal exits only sell the trading-wallet position; selling the vaulted moonbag requires an explicit emergency/rug override. Supports percentage and USD-minimum moonbag rules globally or per token.
 metadata:
   {
     "clawdbot":
@@ -12,216 +12,253 @@ metadata:
   }
 ---
 
-# Bankr Moonbag Guard
+# Bankr Moonbag
 
-Use Bankr for execution, but apply this skill's exit rules before sending any token-sell instruction.
+Use Bankr for execution, but apply this skill whenever buying or selling tokens.
 
-The goal is simple: **normal sell requests must never reduce a guarded token below its moonbag reserve.**
+The core design is **buy -> split -> vault**.
 
-## Default behavior
+A moonbag is not merely remembered inside the trading wallet. It is physically transferred to a separate configured moonbag wallet as soon as practical after each successful buy.
 
-- Default moonbag reserve: **10% of the token balance observed immediately before the first guarded sell for that token, with a $50 USD floor**.
-- The percentage reserve is anchored to that first snapshot. Do **not** recalculate it from the shrinking current balance after later sells.
-- The effective protected amount is whichever is larger at execution time: the anchored percentage reserve or enough tokens to satisfy the configured USD floor.
-- "Sell all", "sell everything", "close it", "dump it", "exit", and equivalent wording mean **sell all sellable tokens while preserving the reserve**.
-- Buys do not reduce an existing reserve.
-- If the user later increases the position, keep the existing reserve unless they explicitly ask to reset/rebase it.
-- Never silently disable the guard because a sell looks urgent, profitable, obvious, or user-intended.
+## Wallet model
 
-## Persistent state
+Maintain two roles:
 
-Persist moonbag state per wallet + chain + token.
+- **Trading wallet** — normal Bankr buys and sells happen here.
+- **Moonbag wallet** — receives protected token slices and is not included in ordinary exit instructions.
 
-Preferred local path:
+Persist only routing/configuration data and public addresses. Do not generate, expose, log, or persist private keys or seed phrases inside this skill.
 
-`~/.config/bankr-moonbag/state.json`
-
-Example:
+Example config:
 
 ```json
 {
-  "version": 1,
-  "defaultReservePct": 10,
-  "defaultReserveUsdFloor": 50,
-  "positions": {
-    "base:0xTokenAddress": {
-      "symbol": "TOKEN",
-      "anchorBalance": "1250000",
-      "baseReserveTokens": "125000",
-      "reservePct": 10,
-      "reserveUsdFloor": 50,
-      "createdAt": "2026-09-20T00:00:00Z"
-    }
-  }
+  "version": 2,
+  "tradingWallet": "0xTradingWallet",
+  "moonbagWallet": "0xMoonbagWallet",
+  "defaults": {
+    "reservePct": 10,
+    "reserveUsdMinimum": 50
+  },
+  "tokens": {}
 }
 ```
 
-Use token contract/mint address as the identity whenever possible. Symbols alone are not sufficient.
+Use separate chain-compatible moonbag addresses where necessary. Resolve EVM vs Solana destinations correctly before transferring.
 
-If state is unavailable, missing, or corrupt, **fail safe**:
-1. fetch the current token balance,
-2. create a new anchor from that balance,
-3. reserve the configured percentage and USD floor,
-4. only then execute the sell.
+## Default moonbag rule
 
-Do not guess an old anchor from trade history unless the user explicitly asks you to reconstruct it.
+Default:
 
-## Guard algorithm
+- **10% of each buy**, OR
+- **$50 worth of the purchased token**
 
-For each sell request:
+Whichever results in **more tokens being vaulted**, capped at the actual amount purchased.
 
-1. Resolve the exact wallet, chain, token contract/mint, and current token balance.
-2. Load the token's moonbag state.
-3. If no state exists:
-   - `anchorBalance = currentBalance`
-   - `baseReserveTokens = anchorBalance * reservePct / 100`
-   - persist the record before executing the sell.
-4. Resolve a current token price in USD when `reserveUsdFloor > 0`.
+The user may change either value globally or per token.
+
+Examples:
+
+- "Keep 20% of every buy as a moonbag."
+- "Make the minimum $100."
+- "For TOKEN keep 25% or $250, whichever is larger."
+- "For this token, percentage only."
+- "Disable moonbagging for TOKEN."
+- "Make all future buys 5% with no dollar minimum."
+
+## Buy flow: split immediately
+
+For every successful token purchase:
+
+1. Identify the exact chain and token contract/mint.
+2. Determine the quantity actually received from the buy, not merely the quoted amount.
+3. Resolve a current USD price or derive the effective execution price from the completed buy when possible.
+4. Load global defaults and any token-specific overrides.
 5. Calculate:
-   - `usdFloorTokens = reserveUsdFloor / currentTokenPriceUsd`
-   - `effectiveReserveTokens = max(baseReserveTokens, usdFloorTokens)`
-   - `effectiveReserveTokens = min(currentBalance, effectiveReserveTokens)`
-   - `sellable = max(0, currentBalance - effectiveReserveTokens)`
-6. Convert the user's requested sell into token units.
-7. Execute:
-   - `actualSell = min(requestedSell, sellable)`
-8. If the request exceeds `sellable`, explain that the request was capped by the moonbag guard and identify whether the percentage reserve or USD floor was binding.
-9. Re-read the post-trade balance when practical and verify it is not below `effectiveReserveTokens`.
+   - `pctTokens = purchasedTokens * reservePct / 100`
+   - `usdTokens = reserveUsdMinimum / tokenPriceUsd` when the USD minimum is enabled
+   - `moonbagTokens = max(pctTokens, usdTokens)`
+   - `moonbagTokens = min(purchasedTokens, moonbagTokens)`
+6. Transfer `moonbagTokens` from the trading wallet to the configured moonbag wallet.
+7. Verify the transfer when practical.
+8. Report both the trading amount and vaulted amount.
 
-If a reliable current USD price cannot be resolved while a USD floor is enabled, **fail safe**: do not execute an amount that could violate the floor. Ask Bankr for a quote/price first rather than ignoring the USD floor.
+Example:
 
-### Percentage sells
+```text
+Bought 1,000,000 TOKEN.
+Moved 100,000 TOKEN to your moonbag wallet.
+900,000 TOKEN remains in the trading wallet.
+```
 
-A request like "sell 50%" means 50% of the **current total balance**, capped at `sellable`.
+### Important edge cases
 
-A request like "sell 100%" or "sell all" means exactly `sellable`, not the full wallet balance.
+- If the whole purchase is smaller than the configured USD minimum, vaulting may consume the entire buy. Make that clear before or immediately after execution depending on what Bankr's execution flow allows.
+- If a reliable price cannot be determined, use the percentage rule and do not invent a USD conversion. If the USD minimum would materially change the amount, resolve a Bankr quote/price before sweeping.
+- If the moonbag transfer fails, do not pretend the tokens are protected. Report that they remain in the trading wallet and retry only when appropriate.
+- Repeated buys each generate their own moonbag slice. The moonbag wallet therefore accumulates protected tokens over time.
 
-### Dollar-value sells
+## Normal sell flow
 
-For requests like "sell $500 of TOKEN":
+Ordinary exits apply to the **trading wallet only**.
 
-- estimate token quantity using Bankr's normal quote/execution path,
-- cap the resulting token amount at `sellable`,
-- never use price movement as a reason to dip into the reserve.
+These phrases are normal exits, not moonbag overrides:
 
-## Configuration
+- "sell"
+- "sell all"
+- "sell everything"
+- "I'm ready to exit"
+- "close the position"
+- "take profit"
+- "dump it"
+- "get me out"
 
-Default configuration:
+When the user says "sell all", sell all of the applicable token held in the trading wallet. Do **not** pull tokens back from the moonbag wallet.
+
+This makes "sell all" truthful: it means 100% of the actively tradable bag, while the vaulted moonbag remains physically separate.
+
+## Emergency moonbag liquidation
+
+Selling the moonbag is a separate intent class from taking profit or deciding to exit.
+
+The user must clearly indicate that the token itself is compromised, rugged, malicious, broken, or that they explicitly want to liquidate the protected moonbag too.
+
+Examples that qualify:
+
+- "Fuck, it was a rug — sell the moonbag too."
+- "This token rugged. Emergency exit everything including the moonbag."
+- "The contract is compromised; liquidate the vaulted TOKEN."
+- "Override moonbag protection and sell the moonbag."
+- "Sell from the moonbag wallet too."
+
+Examples that do **not** qualify:
+
+- "I'm ready to exit."
+- "Sell everything."
+- "I'm done with this one."
+- "Take me out completely."
+- "No, really, sell all."
+
+Do not infer a rug or compromise merely from price movement. The user may explicitly characterize the situation as a rug/emergency, or separately instruct the skill to liquidate the moonbag.
+
+### Emergency flow
+
+When emergency intent is explicit:
+
+1. Resolve the exact token and chain.
+2. Read both trading-wallet and moonbag-wallet balances.
+3. Tell the user that the protected moonbag is included in this liquidation.
+4. Execute the trading-wallet sale.
+5. Execute or route the moonbag-wallet liquidation using the wallet/signer capabilities available to Bankr.
+6. Verify resulting balances when practical.
+7. Report exactly what was sold from each wallet.
+
+If Bankr cannot transact from the configured moonbag wallet, do not silently transfer the moonbag back to the trading wallet unless the user explicitly approves that route. Report the limitation and the safest available execution path.
+
+## Configuration and overrides
+
+Global defaults:
 
 ```json
 {
   "reservePct": 10,
-  "reserveUsdFloor": 50,
-  "explicitOverrideRequired": true
+  "reserveUsdMinimum": 50
 }
 ```
 
-The user may adjust either side of the guard globally or per token with direct instructions such as:
-
-- "Keep 20% as my moonbag from now on."
-- "Make the moonbag 5% for this token."
-- "Never let my moonbag fall below $100 worth."
-- "For TOKEN, keep 15% or $250, whichever is larger."
-- "Turn off the dollar floor but keep 10%."
-- "Rebase my TOKEN moonbag from my current balance."
-
-### Global defaults and per-token overrides
-
-Store global defaults separately from position-specific overrides. A token may inherit both defaults, override one, or override both.
-
-Example:
+Per-token overrides are keyed by chain + contract/mint:
 
 ```json
 {
-  "defaults": {
-    "reservePct": 10,
-    "reserveUsdFloor": 50
-  },
-  "positions": {
+  "tokens": {
     "base:0xTokenAddress": {
       "reservePct": 20,
-      "reserveUsdFloor": 250
+      "reserveUsdMinimum": 250
+    },
+    "solana:MintAddress": {
+      "reservePct": 5,
+      "reserveUsdMinimum": 0
     }
   }
 }
 ```
 
-When changing the percentage for an existing position, do not silently shrink a previously protected token quantity. By default:
+Token-specific configuration wins over global defaults.
 
-`newBaseReserveTokens = max(existingBaseReserveTokens, anchorBalance * newPct / 100)`
+A user may reduce, increase, or disable future moonbag slicing explicitly. Changes apply to future buys unless they specifically ask to move existing moonbag assets.
 
-Changing the USD floor changes the dynamic floor immediately. Increasing it may reduce the currently sellable amount. Reducing or disabling it is allowed only when the user's instruction is explicit.
+Changing a rule does not automatically move tokens already in the moonbag wallet back to the trading wallet.
 
-If the user explicitly asks to reduce an already anchored percentage reserve, confirm the exact resulting protected amount before changing it.
+## Setting up the moonbag wallet
 
-## Protected reserve override
+Before the first protected buy, ensure a moonbag destination exists for that chain.
 
-The moonbag is intentionally harder to sell than the rest of the position.
+The skill should prefer an existing user-controlled secondary Bankr-compatible wallet/address when available.
 
-Do not sell protected tokens based on vague wording, repeated "sell all" requests, urgency, or prior conversation context.
+Store only the public address and wallet role in configuration.
 
-Only allow a reserve liquidation when the user explicitly states in the current request that they want to override/remove the moonbag protection for the specific token.
+Never:
+- create home-grown key storage,
+- write seed phrases to the state file,
+- print private keys into chat,
+- assume one address works across incompatible chain families.
 
-Examples that count:
+If no suitable moonbag wallet is configured, do not silently fall back to same-wallet bookkeeping. Tell the user that the buy can execute but physical moonbag separation requires a destination wallet, or complete Bankr-supported secondary-wallet setup if available.
 
-- "Override the moonbag and sell the reserved TOKEN too."
-- "Remove moonbag protection for 0x... and sell everything."
-- "I explicitly want to sell my protected TOKEN reserve."
+## Bankr execution patterns
 
-Examples that do **not** count:
-
-- "Sell it all."
-- "No, seriously, everything."
-- "Get me out."
-- "Close the position."
-- "Why didn't you sell 100%?"
-
-Before executing an override, state the protected quantity that will be sold and require one explicit confirmation if the action would take the balance below the stored reserve.
-
-After a full override sale, delete that token's moonbag state only after successful execution.
-
-## Bankr execution
-
-Use the installed Bankr CLI.
-
-Examples:
+Typical flow:
 
 ```bash
-# Read portfolio / balance before computing the guard
+# Buy normally into trading wallet
+bankr agent prompt "Buy $500 of TOKEN on Base"
+
+# Read resulting portfolio/balance
 bankr wallet portfolio
 
-# Execute the already-guarded amount
-bankr agent prompt "Sell exactly <ACTUAL_SELL> <TOKEN> on <CHAIN>"
+# Sweep calculated moonbag slice to separate wallet
+bankr agent prompt "Send exactly <MOONBAG_TOKENS> TOKEN on Base to <MOONBAG_ADDRESS>"
 ```
 
-Do not send "sell all" to Bankr after this skill has calculated a guarded token quantity. Send the exact capped amount whenever possible.
+For normal exits:
 
-If Bankr only supports a value-denominated prompt for the asset in question, formulate the prompt so the resulting amount cannot exceed the calculated sellable quantity.
+```bash
+bankr agent prompt "Sell all TOKEN held in my trading wallet on Base"
+```
+
+Do not include the moonbag wallet in ordinary sell prompts.
 
 ## Response style
 
-For ordinary guarded sells, keep the response concise:
+Keep routine output compact.
+
+After a buy:
 
 ```text
-Sold 900,000 TOKEN. Kept 100,000 TOKEN (10%) as your moonbag.
+Bought 1,000,000 TOKEN. Vaulted 100,000 (10%) to your moonbag wallet; 900,000 remains tradable.
 ```
 
-When a request is capped:
+Normal exit:
 
 ```text
-You asked to sell 100%. Moonbag Guard capped the sale at 90% and kept 10% protected.
+Sold the trading bag. Your vaulted moonbag is untouched.
 ```
 
-Do not describe the reserve as guaranteed profit, expected upside, or investment advice. It is only an execution preference.
+Emergency exit:
+
+```text
+Emergency exit: sold the trading bag and the protected moonbag.
+```
+
+Do not describe the moonbag as guaranteed profit, expected upside, or investment advice. It is an execution preference and wallet-separation mechanism.
 
 ## Safety invariants
 
-These rules outrank convenience:
-
-1. **Never sell below the effective reserve without an explicit reserve override.**
-2. **The effective reserve is the larger of the anchored percentage reserve and the configured USD floor converted to tokens at the current price.**
-3. **Never recompute the anchored percentage reserve downward from a shrinking balance.**
-4. **Never identify a token by symbol alone when a contract/mint can be resolved.**
-5. **Never treat "sell all" as an override.**
-6. **Persist the reserve before the first guarded sell.**
-7. **If state, balance, or required price information is uncertain, do not perform a full exit.**
+1. **Slice the moonbag on buys, not on ordinary sells.**
+2. **Move the protected slice to a separate configured wallet whenever supported.**
+3. **"Sell all" and "I'm ready to exit" never imply selling the moonbag wallet.**
+4. **Moonbag liquidation requires explicit emergency/rug intent or an explicit instruction to sell protected assets.**
+5. **Never infer a rug solely from price action.**
+6. **Never expose or persist private keys or seed phrases.**
+7. **Identify tokens by contract/mint when possible, not symbol alone.**
+8. **If the physical sweep fails, clearly state that the moonbag remains in the trading wallet and is not yet protected by wallet separation.**
