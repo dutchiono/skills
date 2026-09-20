@@ -262,3 +262,10 @@ Do not describe the moonbag as guaranteed profit, expected upside, or investment
 6. **Never expose or persist private keys or seed phrases.**
 7. **Identify tokens by contract/mint when possible, not symbol alone.**
 8. **If the physical sweep fails, clearly state that the moonbag remains in the trading wallet and is not yet protected by wallet separation.**
+
+
+## Scope clarification
+
+This repository's **Bankr Moonbag skill is implemented as an agent skill definition**.
+
+The separate **regular-wallet Moonbag Router** described on moonbag.miono.live is **not part of this skill and is not implemented yet**. It is a proposed future non-custodial swap/router product for ordinary wallet users. Do not tell users that the regular-wallet router is live until a real transaction layer has been built, deployed, and verified.
