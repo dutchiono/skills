@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Moonbag · Miono</title>
+<meta name="description" content="Never round-trip the whole bag again. Moonbag for agents and regular wallets." />
+<style>
+:root{--bg:#f3f1eb;--fg:#111;--muted:#68645c;--line:#cbc6bb;--panel:#e9e5dc;--accent:#7b1222}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:Georgia,'Times New Roman',serif;line-height:1.45}a{color:inherit}main{max-width:980px;margin:0 auto;padding:28px 22px 80px}.nav{display:flex;justify-content:space-between;gap:20px;font:14px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;border-bottom:1px solid var(--line);padding-bottom:13px}.nav div{display:flex;gap:16px;flex-wrap:wrap}.hero{padding:72px 0 56px;border-bottom:1px solid var(--line)}h1{font-size:clamp(58px,12vw,132px);line-height:.82;margin:0;letter-spacing:-.055em;font-weight:500}.kicker{font:13px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:24px}.lede{max-width:690px;font-size:clamp(22px,3vw,34px);margin:28px 0 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);margin:40px 0;border:1px solid var(--line)}.card{background:var(--bg);padding:28px;min-height:360px;display:flex;flex-direction:column}.eyebrow{font:12px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}h2{font-size:38px;margin:10px 0 14px;font-weight:500;letter-spacing:-.02em}.card p{font-size:19px;margin:0 0 20px}.flow{font:14px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--panel);padding:18px;border:1px solid var(--line);white-space:pre-wrap}.actions{margin-top:auto;padding-top:28px;display:flex;gap:10px;flex-wrap:wrap}.btn{display:inline-block;border:1px solid var(--fg);padding:11px 14px;text-decoration:none;font:13px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace}.btn.primary{background:var(--fg);color:var(--bg)}section{padding:44px 0;border-bottom:1px solid var(--line)}section h3{font-size:30px;margin:0 0 16px;font-weight:500}.split{display:grid;grid-template-columns:1fr 2fr;gap:40px}.split p{font-size:19px;margin-top:0}.rule{font-size:24px;border-left:4px solid var(--accent);padding-left:18px}.small{font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted)}footer{padding-top:24px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted)}@media(max-width:720px){.grid,.split{grid-template-columns:1fr}.hero{padding-top:54px}.card{min-height:0}}
+</style>
+</head>
+<body><main>
+<nav class="nav"><div><a href="https://miono.live">Miono</a><span>Moonbag</span></div><div><a href="#agent">Agent</a><a href="#wallet">Wallet</a><a href="#why">Why</a></div></nav>
+<header class="hero"><div class="kicker">Miono / Moonbag</div><h1>keep<br>the tail.</h1><p class="lede">A tiny rule for a recurring mistake: every buy leaves something behind before you get the chance to sell it all.</p></header>
+<div class="grid">
+<article class="card" id="agent"><div class="eyebrow">01 · Agents / Bankr</div><h2>Moonbag Skill</h2><p>Install a Bankr companion skill. On every buy, it slices off the configured reserve and sends it to a separate moonbag wallet.</p><div class="flow">BUY → SPLIT → VAULT
+
+Default:
+10% OR $50 minimum
+whichever protects more tokens
+
+Normal exit → trading wallet only
+Rug/emergency → moonbag can be included explicitly</div><div class="actions"><a class="btn primary" href="https://github.com/dutchiono/skills/tree/main/bankr-moonbag">View skill</a><a class="btn" href="#skill-notes">How it works</a></div></article>
+<article class="card" id="wallet"><div class="eyebrow">02 · Regular wallets</div><h2>Moonbag Router</h2><p>The same idea without an agent: buy through a non-custodial router that sends the tradable portion to your normal wallet and the reserve to a vault address.</p><div class="flow">$500 USDC → ROUTER → TOKEN
+
+90% → trading wallet
+10% → moonbag wallet
+
+No custody.
+No shared private keys.
+The split happens at acquisition.</div><div class="actions"><span class="btn primary">Router design</span><a class="btn" href="#router-notes">Architecture</a></div></article>
+</div>
+<section id="why"><div class="split"><h3>The point</h3><div><p class="rule">“Sell all” should mean sell the active bag — not erase every last token you ever bought.</p><p>Moonbag moves the decision earlier. Instead of trying to remember restraint while exiting, the reserve is separated when the position is created.</p></div></div></section>
+<section id="skill-notes"><div class="split"><h3>Agent version</h3><div><p>The Bankr skill is portable: any compatible agent with Bankr access can install it. Configuration supports global rules and per-token overrides.</p><p>Normal phrases like “sell all,” “I’m ready to exit,” or “dump it” never touch the vaulted wallet. A different intent class handles genuine emergencies: “it rugged — sell the moonbag too.”</p><p class="small">The skill stores public routing/config only. It does not invent or persist private keys.</p></div></div></section>
+<section id="router-notes"><div class="split"><h3>Wallet version</h3><div><p>A public router can provide the same behavior for MetaMask, Phantom and other ordinary wallet users. The user chooses a trading wallet, a moonbag destination and the reserve rule.</p><p>The production version should execute the swap and split atomically where the chain/router architecture permits it. Until that transaction layer is deployed, this page describes the product rather than pretending a wallet connection is live.</p></div></div></section>
+<section><div class="split"><h3>Rules</h3><div><p><strong>Default:</strong> 10% or $50 worth, whichever is larger.</p><p><strong>Adjustable:</strong> percentage, dollar minimum, global defaults, per-token overrides.</p><p><strong>Exit:</strong> trading wallet only.</p><p><strong>Emergency:</strong> explicit instruction can liquidate the moonbag too.</p></div></div></section>
+<footer>moonbag.miono.live · a Miono experiment · <a href="https://miono.live">return</a></footer>
+</main></body></html>
