@@ -20,8 +20,9 @@ The goal is simple: **normal sell requests must never reduce a guarded token bel
 
 ## Default behavior
 
-- Default moonbag reserve: **10% of the token balance observed immediately before the first guarded sell for that token**.
-- The reserve is anchored to that first snapshot. Do **not** recalculate it from the shrinking current balance after later sells.
+- Default moonbag reserve: **10% of the token balance observed immediately before the first guarded sell for that token, with a $50 USD floor**.
+- The percentage reserve is anchored to that first snapshot. Do **not** recalculate it from the shrinking current balance after later sells.
+- The effective protected amount is whichever is larger at execution time: the anchored percentage reserve or enough tokens to satisfy the configured USD floor.
 - "Sell all", "sell everything", "close it", "dump it", "exit", and equivalent wording mean **sell all sellable tokens while preserving the reserve**.
 - Buys do not reduce an existing reserve.
 - If the user later increases the position, keep the existing reserve unless they explicitly ask to reset/rebase it.
@@ -41,12 +42,14 @@ Example:
 {
   "version": 1,
   "defaultReservePct": 10,
+  "defaultReserveUsdFloor": 50,
   "positions": {
     "base:0xTokenAddress": {
       "symbol": "TOKEN",
       "anchorBalance": "1250000",
-      "reserveTokens": "125000",
+      "baseReserveTokens": "125000",
       "reservePct": 10,
+      "reserveUsdFloor": 50,
       "createdAt": "2026-09-20T00:00:00Z"
     }
   }
@@ -58,7 +61,7 @@ Use token contract/mint address as the identity whenever possible. Symbols alone
 If state is unavailable, missing, or corrupt, **fail safe**:
 1. fetch the current token balance,
 2. create a new anchor from that balance,
-3. reserve the configured percentage,
+3. reserve the configured percentage and USD floor,
 4. only then execute the sell.
 
 Do not guess an old anchor from trade history unless the user explicitly asks you to reconstruct it.
@@ -71,15 +74,21 @@ For each sell request:
 2. Load the token's moonbag state.
 3. If no state exists:
    - `anchorBalance = currentBalance`
-   - `reserveTokens = anchorBalance * reservePct / 100`
+   - `baseReserveTokens = anchorBalance * reservePct / 100`
    - persist the record before executing the sell.
-4. Calculate:
-   - `sellable = max(0, currentBalance - reserveTokens)`
-5. Convert the user's requested sell into token units.
-6. Execute:
+4. Resolve a current token price in USD when `reserveUsdFloor > 0`.
+5. Calculate:
+   - `usdFloorTokens = reserveUsdFloor / currentTokenPriceUsd`
+   - `effectiveReserveTokens = max(baseReserveTokens, usdFloorTokens)`
+   - `effectiveReserveTokens = min(currentBalance, effectiveReserveTokens)`
+   - `sellable = max(0, currentBalance - effectiveReserveTokens)`
+6. Convert the user's requested sell into token units.
+7. Execute:
    - `actualSell = min(requestedSell, sellable)`
-7. If the request exceeds `sellable`, explain that the request was capped by the moonbag guard.
-8. Re-read the post-trade balance when practical and verify it is not below `reserveTokens`.
+8. If the request exceeds `sellable`, explain that the request was capped by the moonbag guard and identify whether the percentage reserve or USD floor was binding.
+9. Re-read the post-trade balance when practical and verify it is not below `effectiveReserveTokens`.
+
+If a reliable current USD price cannot be resolved while a USD floor is enabled, **fail safe**: do not execute an amount that could violate the floor. Ask Bankr for a quote/price first rather than ignoring the USD floor.
 
 ### Percentage sells
 
@@ -102,21 +111,48 @@ Default configuration:
 ```json
 {
   "reservePct": 10,
+  "reserveUsdFloor": 50,
   "explicitOverrideRequired": true
 }
 ```
 
-The user may change the reserve percentage with direct instructions such as:
+The user may adjust either side of the guard globally or per token with direct instructions such as:
 
 - "Keep 20% as my moonbag from now on."
 - "Make the moonbag 5% for this token."
+- "Never let my moonbag fall below $100 worth."
+- "For TOKEN, keep 15% or $250, whichever is larger."
+- "Turn off the dollar floor but keep 10%."
 - "Rebase my TOKEN moonbag from my current balance."
+
+### Global defaults and per-token overrides
+
+Store global defaults separately from position-specific overrides. A token may inherit both defaults, override one, or override both.
+
+Example:
+
+```json
+{
+  "defaults": {
+    "reservePct": 10,
+    "reserveUsdFloor": 50
+  },
+  "positions": {
+    "base:0xTokenAddress": {
+      "reservePct": 20,
+      "reserveUsdFloor": 250
+    }
+  }
+}
+```
 
 When changing the percentage for an existing position, do not silently shrink a previously protected token quantity. By default:
 
-`newReserveTokens = max(existingReserveTokens, anchorBalance * newPct / 100)`
+`newBaseReserveTokens = max(existingBaseReserveTokens, anchorBalance * newPct / 100)`
 
-If the user explicitly asks to reduce the protected amount, confirm the exact resulting reserve before changing it.
+Changing the USD floor changes the dynamic floor immediately. Increasing it may reduce the currently sellable amount. Reducing or disabling it is allowed only when the user's instruction is explicit.
+
+If the user explicitly asks to reduce an already anchored percentage reserve, confirm the exact resulting protected amount before changing it.
 
 ## Protected reserve override
 
@@ -182,9 +218,10 @@ Do not describe the reserve as guaranteed profit, expected upside, or investment
 
 These rules outrank convenience:
 
-1. **Never sell below the stored reserve without an explicit reserve override.**
-2. **Never recompute the reserve downward from a shrinking balance.**
-3. **Never identify a token by symbol alone when a contract/mint can be resolved.**
-4. **Never treat "sell all" as an override.**
-5. **Persist the reserve before the first guarded sell.**
-6. **If state or balance information is uncertain, do not perform a full exit.**
+1. **Never sell below the effective reserve without an explicit reserve override.**
+2. **The effective reserve is the larger of the anchored percentage reserve and the configured USD floor converted to tokens at the current price.**
+3. **Never recompute the anchored percentage reserve downward from a shrinking balance.**
+4. **Never identify a token by symbol alone when a contract/mint can be resolved.**
+5. **Never treat "sell all" as an override.**
+6. **Persist the reserve before the first guarded sell.**
+7. **If state, balance, or required price information is uncertain, do not perform a full exit.**
