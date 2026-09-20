@@ -7,13 +7,14 @@
   "demo": {
     "title": "moonbag-example.sh",
     "language": "bash",
-    "code": "# User: sell all my TOKEN\n# Guard snapshots the position, protects 10%, and sends only the sellable amount to Bankr\nbankr wallet portfolio\nbankr agent prompt \"Sell exactly <guarded-amount> TOKEN on Base\""
+    "code": "# Buy normally, then immediately sweep the configured moonbag slice to a separate wallet\\nbankr agent prompt \"Buy $500 of TOKEN on Base\"\\nbankr wallet portfolio\\nbankr agent prompt \"Send exactly <moonbag-amount> TOKEN on Base to <moonbag-wallet>\""
   },
   "setup": [
     "Install Bankr CLI: `npm install -g @bankr/cli`",
     "Login to Bankr: `bankr login email you@example.com`",
-    "Install this skill and use it for token exits",
-    "Default behavior: every first guarded exit anchors a 10% moonbag with a $50 USD floor; either can be overridden globally or per token"
+    "Configure a separate moonbag wallet/address",
+    "Default: vault 10% or $50 of each buy, whichever protects more tokens",
+    "Normal exits never touch the moonbag; emergency/rug exits require explicit moonbag liquidation intent"
   ],
   "install": {
     "type": "bankr",
