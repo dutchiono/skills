@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "slug": "bankr-moonbag",
+  "provider": "dutchiono",
+  "providerUrl": "https://github.com/dutchiono/skills",
+  "logo": null,
+  "demo": {
+    "title": "moonbag-example.sh",
+    "language": "bash",
+    "code": "# User: sell all my TOKEN\n# Guard snapshots the position, protects 10%, and sends only the sellable amount to Bankr\nbankr wallet portfolio\nbankr agent prompt \"Sell exactly <guarded-amount> TOKEN on Base\""
+  },
+  "setup": [
+    "Install Bankr CLI: `npm install -g @bankr/cli`",
+    "Login to Bankr: `bankr login email you@example.com`",
+    "Install this skill and use it for token exits",
+    "Default behavior: every first guarded exit anchors a permanent 10% moonbag"
+  ],
+  "install": {
+    "type": "bankr",
+    "repoPath": "bankr-moonbag",
+    "command": "install the bankr-moonbag skill from https://github.com/dutchiono/skills/tree/moonbag-guard/bankr-moonbag"
+  }
+}
