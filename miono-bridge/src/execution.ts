@@ -3,7 +3,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 import { Connection, Keypair } from "@solana/web3.js";
 import bs58 from "bs58";
-import { adaptSolanaWallet } from "@relayprotocol/relay-solana-wallet-adapter";
+import { adaptSolanaWallet } from "@relayprotocol/relay-svm-wallet-adapter";
 import { getClient } from "@relayprotocol/relay-sdk";
 import { getChains } from "./chains.js";
 import { getWallet, secretFor } from "./wallets.js";
@@ -17,7 +17,7 @@ async function execEvm(q:WalletQuote,b:BatchQuote){
 }
 async function execSol(q:WalletQuote,b:BatchQuote){
   const pair=getWallet(q.walletId); const kp=Keypair.fromSecretKey(bs58.decode(secretFor(pair.solKeyRef))); const c=getChains().solana; const connection=new Connection(c.rpcUrl,"confirmed");
-  const adapted=adaptSolanaWallet(kp.publicKey.toBase58(),c.relayChainId,connection,async(tx:any)=>connection.sendTransaction(tx,[kp]));
+  const adapted=adaptSolanaWallet(kp.publicKey.toBase58(),c.relayChainId,connection,async(tx:any)=>{ tx.sign([kp]); const signature=await connection.sendRawTransaction(tx.serialize()); return {signature}; });
   return getClient().actions.execute({quote:q.raw,wallet:adapted as any});
 }
 export async function executeBatch(batch:BatchQuote){
