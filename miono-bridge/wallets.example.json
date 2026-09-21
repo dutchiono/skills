@@ -1,0 +1,11 @@
+[
+  {
+    "id": "wallet01",
+    "label": "Wallet 01",
+    "evmAddress": "0x0000000000000000000000000000000000000000",
+    "solAddress": "11111111111111111111111111111111",
+    "evmKeyRef": "MIONO_KEY_WALLET01_EVM",
+    "solKeyRef": "MIONO_KEY_WALLET01_SOL",
+    "enabled": true
+  }
+]
