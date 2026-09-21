@@ -1,0 +1,10 @@
+import "dotenv/config";
+import { makeBot } from "./bot.js";
+const token=process.env.BOT_TOKEN;
+if(!token) throw new Error("BOT_TOKEN is required");
+if(!process.env.TELEGRAM_ADMIN_IDS) throw new Error("TELEGRAM_ADMIN_IDS is required");
+const bot=makeBot(token);
+await bot.launch();
+console.log("Miono Bridge online");
+process.once("SIGINT",()=>bot.stop("SIGINT"));
+process.once("SIGTERM",()=>bot.stop("SIGTERM"));
